@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ContentFilters</key>
+	<dict/>
+	<key>auto_connect</key>
+	<true/>
+	<key>data</key>
+	<dict>
+		<key>connection</key>
+		<dict>
+			<key>database</key>
+			<string>imdb_ratings</string>
+			<key>host</key>
+			<string>localhost</string>
+			<key>kcid</key>
+			<string>9027488996012996987</string>
+			<key>name</key>
+			<string>localhost/imdb_ratings</string>
+			<key>rdbms_type</key>
+			<string>mysql</string>
+			<key>sslCACertFileLocation</key>
+			<string></string>
+			<key>sslCACertFileLocationEnabled</key>
+			<integer>0</integer>
+			<key>sslCertificateFileLocation</key>
+			<string></string>
+			<key>sslCertificateFileLocationEnabled</key>
+			<integer>0</integer>
+			<key>sslKeyFileLocation</key>
+			<string></string>
+			<key>sslKeyFileLocationEnabled</key>
+			<integer>0</integer>
+			<key>type</key>
+			<string>SPSocketConnection</string>
+			<key>useSSL</key>
+			<integer>0</integer>
+			<key>user</key>
+			<string>root</string>
+		</dict>
+		<key>session</key>
+		<dict>
+			<key>connectionEncoding</key>
+			<string>utf8</string>
+			<key>contentFilter</key>
+			<dict/>
+			<key>contentPageNumber</key>
+			<integer>1</integer>
+			<key>contentSelection</key>
+			<data>
+			YnBsaXN0MDDUAQIDBAUGJyhYJHZlcnNpb25YJG9iamVjdHNZJGFy
+			Y2hpdmVyVCR0b3ASAAGGoKgHCBMUFRYdJFUkbnVsbNMJCgsMDxJX
+			TlMua2V5c1pOUy5vYmplY3RzViRjbGFzc6INDoACgAOiEBGABIAF
+			gAdUdHlwZVRyb3dzXxAdU2VsZWN0aW9uRGV0YWlsVHlwZU5TSW5k
+			ZXhTZXTUFwsYGRobHBxaTlNMb2NhdGlvblxOU1JhbmdlQ291bnRY
+			TlNMZW5ndGgRA0KABhAB0h4fICFaJGNsYXNzbmFtZVgkY2xhc3Nl
+			c1pOU0luZGV4U2V0oiIjWk5TSW5kZXhTZXRYTlNPYmplY3TSHh8l
+			JlxOU0RpY3Rpb25hcnmiJSNfEA9OU0tleWVkQXJjaGl2ZXLRKSpU
+			ZGF0YYABAAgAEQAaACMALQAyADcAQABGAE0AVQBgAGcAagBsAG4A
+			cQBzAHUAdwB8AIEAoQCqALUAwgDLAM4A0ADSANcA4gDrAPYA+QEE
+			AQ0BEgEfASIBNAE3ATwAAAAAAAACAQAAAAAAAAArAAAAAAAAAAAA
+			AAAAAAABPg==
+			</data>
+			<key>contentSortColIsAsc</key>
+			<true/>
+			<key>contentViewport</key>
+			<string>{{0, 14952}, {1163, 627}}</string>
+			<key>isToolbarVisible</key>
+			<true/>
+			<key>queries</key>
+			<string>truncate table ratings;
+
+LOAD DATA LOCAL INFILE '/tmp/imdb_ratings.txt' 
+INTO TABLE ratings
+IGNORE 1 LINES
+(@row)
+Set Distribution=trim(SUBSTR(@row,1,11)),
+Votes=trim(SUBSTR(@row,12,21)),
+Rank=trim(SUBSTR(@row,22,25)),
+Title=trim(SUBSTR(@row,27)),
+released=str_to_date(substring(@row,locate('(', @row) +1 ,4),'%Y');
+
+drop table ratings;
+
+CREATE TABLE `ratings` (
+  `Distribution` varchar(16),
+  `Votes` int(11),
+  `Rank` decimal(4,1) ,
+  `Title` varchar(512),
+  `Released` Date
+);
+
+select * from ratings where Votes &gt; 10000 order by Rank desc;
+
+select substring(title,locate('(', title) +1 ,4) from ratings;</string>
+			<key>table</key>
+			<string>ratings</string>
+			<key>view</key>
+			<string>SP_VIEW_CUSTOMQUERY</string>
+			<key>windowVerticalDividerPosition</key>
+			<real>202</real>
+		</dict>
+	</dict>
+	<key>encrypted</key>
+	<false/>
+	<key>format</key>
+	<string>connection</string>
+	<key>queryFavorites</key>
+	<array/>
+	<key>queryHistory</key>
+	<array/>
+	<key>rdbms_type</key>
+	<string>mysql</string>
+	<key>rdbms_version</key>
+	<string>5.6.12</string>
+	<key>version</key>
+	<integer>1</integer>
+</dict>
+</plist>

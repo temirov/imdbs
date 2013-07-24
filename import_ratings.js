@@ -1,9 +1,9 @@
-var localhost = '127.0.0.1',
+var localhost         = '127.0.0.1',
   redis               = require("redis"),
   fs                  = require('fs'),
   util                = require('util'),
   d                   = require('domain').create(),
-  imdb_source_ratings = 'ratings.list',
+  imdb_source_ratings = 'data/source/ratings.list',
   first_chunk, 
   last_chunk, 
   first = true;

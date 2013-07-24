@@ -4,6 +4,7 @@ var localhost         = '127.0.0.1',
   util                = require('util'),
   d                   = require('domain').create(),
   imdb_source_ratings = 'data/source/ratings.list',
+  // imdb_source_ratings = 'data/source/OWL.txt',
   first_chunk, 
   last_chunk, 
   first = true;
@@ -13,16 +14,27 @@ var redis_config = {local:
                       port: 6379},
                     c9:
                       {ip: process.env.IP,
-                      port: 16379},
+                      port: 16349},
                     };
 
 redis_config.current = redis_config.c9.ip ? redis_config.c9 : redis_config.local;
 var client = redis.createClient(redis_config.current.port, redis_config.current.ip);
 
+// var stream = require('stream');
+// var redis_stream = new stream.Writable();
+// var Writable = require('stream').Writable;
+// var redis_stream = new Writable();
+
+// redis_stream._write = function (chunk, enc, next) {
+//     console.dir(chunk);
+//     next();
+// };
+
+// var ts = require('stream').Transform;
+// var uppercase = new ts({decodeStrings: false});
+
 function process_error(err) {
   util.log('HORRIBLE ERROR!!!!!!!!!!!!!!!!!!!!!!!!!!');
-  util.log(util.format("Full title is: %s;\n Year is %d; Incr is: %d; Votes is: %d", title, year, incr, votes));
-  util.log(util.inspect(client.hgetall("ratings:" + incr)));
   util.log(util.inspect(err));
 }
     
@@ -32,8 +44,8 @@ function isInt(year) {
 
 function parse_year_from_title(title, callback){
   var year_position = 0,
-    year, 
-    err = null;
+    year; 
+    // err = null;
 
   do {
     year_position = title.indexOf('(', year_position) + 1;
@@ -51,8 +63,8 @@ function parse_year_from_title(title, callback){
 }
 
 function insert_rating(distribution, votes, rank, title) {
-  client.incr("next.ratings.id", function(err, incr){
-    if (typeof title != 'undefined') {
+  if (typeof title != 'undefined') {
+    client.incr("next.ratings.id", function(err, incr){
       parse_year_from_title(title, function(err, year){
         if (err) {
           process_error(err);
@@ -113,9 +125,9 @@ function insert_rating(distribution, votes, rank, title) {
           }
         });
       });
-    }
     // util.log(util.format("Ready to Insert: Full title is: %s;\n Year is %d", title, year));
-  });
+    });
+  }
 }
 
 function split_rating(string, callback) {
@@ -139,46 +151,78 @@ d.on('error', function(er) {
 d.add(client);
 
 d.run(function() {
-
   client.select(0, function(err, res){
     if (res == 'OK') {
       client.flushdb();
       util.log("The DB has been flushed");
       client.set("next.ratings.id", 0);
       util.log("Ratings ID zeroed");
-      var input = fs.createReadStream(imdb_source_ratings, {encoding:'utf8'});
+      // var input = fs.createReadStream(imdb_source_ratings, {encoding:'utf8'});
+      var ratings = fs.createReadStream(imdb_source_ratings, {encoding:'utf8'});
       util.log("Data import started");
+      
+      // ratings.on('readable', function() {
+      //   util.log("Working");  
+      //   ratings.read();
+      // }); 
 
-      input.on('end', function() {
-        util.log("The end"); 
+      ratings.on('end', function() {
+        client.bgsave();
         client.quit();
+        util.log("The end");
         process.exit(0);       
       }); 
 
-      input.on('data', function(data) {
-        var lump = data.split("\n"),
-          reckage = new Array();
+      ratings.on('data', function(data) {
+        var lump = data.split("\n");
 
         if (first) {
           lump.splice(0, 296);
           last_chunk = lump.splice(-1,1)[0];
         } else {
           first_chunk = lump.splice(0,1)[0];
-          broken_chunk = last_chunk + first_chunk;
-          lump.unshift(broken_chunk) 
-          // reckage.unshift(broken_chunk);
+          var broken_chunk = last_chunk + first_chunk;
+          lump.unshift(broken_chunk);
           last_chunk = lump.splice(-1,1)[0];
         }
         first = false;
-        
-        // reckage.map(function(chunk){
-        //   split_rating(chunk, insert_rating);
-        // });
         
         lump.map(function(chunk){
           split_rating(chunk, insert_rating);
         });
       });
+      
+      // var data = "";
+      // ratings.on('readable', function() {
+      //   //this functions reads chunks of data and emits newLine event when \n is found
+      //   data += ratings.read();
+      //   while( data.indexOf('\n') >= 0 ){
+      //     ratings.emit('newLine', data.substring(0,data.indexOf('\n')));
+      //     data = data.substring(data.indexOf('\n')+1);
+      //   }
+      // });
+      
+      // var offset = 0;
+      // ratings.on('readable', function () {
+      //   util.log('SMTH');
+      //   var buf = ratings.read();
+      //   if (!buf) return;
+      //   for (; offset < buf.length; offset++) {
+      //     if (buf[offset] === 0x0a) {
+      //       util.log('SMTH');
+      //       console.dir(buf.slice(0, offset).toString());
+      //       buf = buf.slice(offset + 1);
+      //       offset = 0;
+      //       ratings.unshift(buf);
+      //       return;
+      //     }
+      //   }
+      //   ratings.unshift(buf);
+      // });
+      
+      // util.log("The end"); 
+      // client.quit();
+      // process.exit(0); 
 
     } else {
       util.log("An error occured: %s", res);

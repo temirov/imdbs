@@ -1,4 +1,6 @@
 var redis      = require("redis"),
+  util         = require("util"),
+  async        = require("async"),
   localhost = '127.0.0.1',
   redis_config = {local: 
                     {ip: localhost,
@@ -13,8 +15,32 @@ var db = redis.createClient(redis_config.current.port, redis_config.current.ip);
 
 module.exports = function initS (app) {
   app.get('/s', function(req, res) {
-    db.zcount("years", "1974", "1974", function(err, count){
-      res.json(JSON.parse(count));
+    getYearsCount(function(err, years){
+      res.json(years);
     });
   });
 };
+
+function getYearsCount(callback){
+  var years = [], 
+    year = 1888, 
+    err = null,
+    current_year = new Date().getFullYear();
+  
+  async.whilst(
+    function() { 
+      return year <= current_year; 
+    },
+    function(next) {
+      db.zcount("years", year, year, function(err, count){
+        // util.log(util.format("year is: %s, count is: %d", year, count));
+        years.push({y: year, c: count});
+        year += 1;
+        next();
+      });
+    },
+    function(err) {
+      callback(err, years);
+    }
+  );
+}

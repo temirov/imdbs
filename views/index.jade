@@ -1,5 +1,50 @@
 extends layout
 
+block append head
+  // link(rel='stylesheet', href='/stylesheets/years.css')
+  // script(type="text/javascript", src="/javascripts/years_chart.js")
+  script(type="text/javascript", src="http://d3js.org/d3.v3.min.js", charset="utf-8")
+  
 block content
   h1= title
   p Welcome to #{title}
+  
+  #chart
+    svg#background(width=200, height=200)
+    
+  script.
+    var w = 750,
+      h = 420,
+      p = 10;
+      
+    d3.json('/s', function(err, data){
+    
+      console.log("Error is: %s; data is: %s", err, data);
+      
+      var bar_height = d3.scale.linear()
+        .domain(d3.extent(data, function(d) { return d.c; }) )  // min max of count
+        .range([p,h-p]);  // min max of area to plot in
+    
+      var bar_xpos = d3.scale.linear()
+        .domain(d3.extent(data, function(d) { return d.y; }) )  // min max of year
+        .range([p,w-p]);  // min max of area to plot in
+      
+      var svg = d3.select("svg")
+        .attr("width", w)
+        .attr("height", h);
+      
+      svg.selectAll("rect")
+        .data(data)
+        .enter().append("rect")
+        .attr("x", function(d) {
+          return bar_xpos(d.y); })
+        .attr("y", function(d) { 
+          return h - bar_height(d.c); })
+        .attr("width", 10)
+        .attr("height", function(d) {
+          return bar_height(d.c); 
+        })
+        .attr("fill", "steelblue")
+    });
+
+  

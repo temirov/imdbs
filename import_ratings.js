@@ -2,11 +2,11 @@ var localhost         = '127.0.0.1',
   redis               = require("redis"),
   fs                  = require('fs'),
   util                = require('util'),
-  d                   = require('domain').create(),
+  domain              = require('domain').create(),
   imdb_source_ratings = 'data/source/ratings.list',
-  // imdb_source_ratings = 'data/source/OWL.txt',
   first_chunk, 
-  last_chunk, 
+  last_chunk,
+  broken_line, 
   first = true;
 
 var redis_config = {local: 
@@ -18,20 +18,37 @@ var redis_config = {local:
                     };
 
 redis_config.current = redis_config.c9.ip ? redis_config.c9 : redis_config.local;
-var client = redis.createClient(redis_config.current.port, redis_config.current.ip);
+var db = redis.createClient(redis_config.current.port, redis_config.current.ip);
 
-// var stream = require('stream');
-// var redis_stream = new stream.Writable();
-// var Writable = require('stream').Writable;
-// var redis_stream = new Writable();
+var stream       = require('stream');
+var redis_import = new stream.Writable();
+var data_parse   = new stream.Transform();
 
-// redis_stream._write = function (chunk, enc, next) {
-//     console.dir(chunk);
-//     next();
-// };
+redis_import._write = function (chunk, encoding, callback) {
+  // console.dir(chunk);
+  util.log('Buffer length received by write stream: ' + chunk.length);
+  callback(null, chunk);
+};
 
-// var ts = require('stream').Transform;
-// var uppercase = new ts({decodeStrings: false});
+data_parse._transform = function(chunk, encoding, callback) {
+
+  util.log(util.format('Buffer length received by transform stream: %d', chunk.length));
+  var offset = chunk.length;
+  while (chunk[offset] !== 0x0a) {
+    offset -= 1;
+  };
+  offset = -(chunk.length - offset);
+  util.log(util.format('Offset: %d', offset));
+
+  if (broken_line) {
+    chunk = Buffer.concat([broken_line, chunk]);
+  }
+
+  broken_line = chunk.slice(offset);
+  util.log(util.format('Broken line is: %s', broken_line));
+
+  callback(null, chunk);
+};
 
 function process_error(err) {
   util.log('HORRIBLE ERROR!!!!!!!!!!!!!!!!!!!!!!!!!!');
@@ -44,8 +61,7 @@ function isInt(year) {
 
 function parse_year_from_title(title, callback){
   var year_position = 0,
-    year; 
-    // err = null;
+    year = null; 
 
   do {
     year_position = title.indexOf('(', year_position) + 1;
@@ -54,24 +70,19 @@ function parse_year_from_title(title, callback){
     }
   } while (!(isInt(year) || year_position === 0));
 
-  // if (!year) {
-  //   err = new Error("YEAR IS VERY UNDEFINED!!!!!!!");
-  //   err.Title = title;
-  // } 
-
   callback(null, year);
 }
 
 function insert_rating(distribution, votes, rank, title) {
   if (typeof title != 'undefined') {
-    client.incr("next.ratings.id", function(err, incr){
+    db.incr("next.ratings.id", function(err, incr){
       parse_year_from_title(title, function(err, year){
         if (err) {
           process_error(err);
           process.exit(1);
         }
         // util.log(util.format("Ready to Insert: Full title is: %s;\n Year is %d", title, year));
-        client.multi()
+        db.multi()
         .hmset(
           "ratings:" + incr, 
           "distribution", distribution,
@@ -139,90 +150,64 @@ function split_rating(string, callback) {
   callback(distribution, votes, rank, title);
 }
 
-client.on("error", function (err) {
+db.on("error", function (err) {
   console.log("Error " + err);
   process.exit(1); 
 });
 
-d.on('error', function(er) {
+domain.on('error', function(er) {
   util.log(util.inspect(er));
 });
 
-d.add(client);
+domain.add(db);
+domain.add(redis_import);
+domain.add(data_parse);
 
-d.run(function() {
-  client.select(0, function(err, res){
+domain.run(function() {
+  db.select(0, function(err, res){
     if (res == 'OK') {
-      client.flushdb();
+      db.flushdb();
       util.log("The DB has been flushed");
-      client.set("next.ratings.id", 0);
+      db.set("next.ratings.id", 0);
       util.log("Ratings ID zeroed");
-      // var input = fs.createReadStream(imdb_source_ratings, {encoding:'utf8'});
-      var ratings = fs.createReadStream(imdb_source_ratings, {encoding:'utf8'});
+      var ratings = fs.createReadStream(imdb_source_ratings, {encoding: null});
       util.log("Data import started");
-      
+
+      ratings
+        .pipe(data_parse)
+        .pipe(redis_import);
+        // .pipe(process.stdout);
+
+      ratings.on('end', function() {
+        // db.bgsave();
+        // db.quit();
+        util.log("The end");
+        process.exit(0);       
+      });
+
+      // ratings.on('data', function(data) {
+      //   var lump = data.split("\n");
+
+      //   if (first) {
+      //     lump.splice(0, 296);
+      //     last_chunk = lump.splice(-1,1)[0];
+      //   } else {
+      //     first_chunk = lump.splice(0,1)[0];
+      //     var broken_chunk = last_chunk + first_chunk;
+      //     lump.unshift(broken_chunk);
+      //     last_chunk = lump.splice(-1,1)[0];
+      //   }
+      //   first = false;
+        
+      //   lump.map(function(chunk){
+      //     split_rating(chunk, insert_rating);
+      //   });
+      // });
+
       // ratings.on('readable', function() {
       //   util.log("Working");  
       //   ratings.read();
       // }); 
-
-      ratings.on('end', function() {
-        client.bgsave();
-        client.quit();
-        util.log("The end");
-        process.exit(0);       
-      }); 
-
-      ratings.on('data', function(data) {
-        var lump = data.split("\n");
-
-        if (first) {
-          lump.splice(0, 296);
-          last_chunk = lump.splice(-1,1)[0];
-        } else {
-          first_chunk = lump.splice(0,1)[0];
-          var broken_chunk = last_chunk + first_chunk;
-          lump.unshift(broken_chunk);
-          last_chunk = lump.splice(-1,1)[0];
-        }
-        first = false;
-        
-        lump.map(function(chunk){
-          split_rating(chunk, insert_rating);
-        });
-      });
-      
-      // var data = "";
-      // ratings.on('readable', function() {
-      //   //this functions reads chunks of data and emits newLine event when \n is found
-      //   data += ratings.read();
-      //   while( data.indexOf('\n') >= 0 ){
-      //     ratings.emit('newLine', data.substring(0,data.indexOf('\n')));
-      //     data = data.substring(data.indexOf('\n')+1);
-      //   }
-      // });
-      
-      // var offset = 0;
-      // ratings.on('readable', function () {
-      //   util.log('SMTH');
-      //   var buf = ratings.read();
-      //   if (!buf) return;
-      //   for (; offset < buf.length; offset++) {
-      //     if (buf[offset] === 0x0a) {
-      //       util.log('SMTH');
-      //       console.dir(buf.slice(0, offset).toString());
-      //       buf = buf.slice(offset + 1);
-      //       offset = 0;
-      //       ratings.unshift(buf);
-      //       return;
-      //     }
-      //   }
-      //   ratings.unshift(buf);
-      // });
-      
-      // util.log("The end"); 
-      // client.quit();
-      // process.exit(0); 
 
     } else {
       util.log("An error occured: %s", res);

@@ -20,32 +20,51 @@ var redis_config = {local:
 redis_config.current = redis_config.c9.ip ? redis_config.c9 : redis_config.local;
 var db = redis.createClient(redis_config.current.port, redis_config.current.ip);
 
-var stream       = require('stream');
-var redis_import = new stream.Writable();
-var data_parse   = new stream.Transform();
+var stream           = require('stream');
+var redis_import     = new stream.Writable();
+var reshape_chunks   = new stream.Transform();
+var split_chunks     = new stream.Transform();
 
 redis_import._write = function (chunk, encoding, callback) {
   // console.dir(chunk);
-  util.log('Buffer length received by write stream: ' + chunk.length);
-  callback(null, chunk);
+  // util.log('Buffer length received by write stream: ' + chunk.length);
+  split_rating(chunk, insert_rating);
+  callback(null);
 };
 
-data_parse._transform = function(chunk, encoding, callback) {
+split_chunks._transform = function(chunk, encoding, callback) {
+  var offset        = 0, 
+    prev_offset     = 0;
 
-  util.log(util.format('Buffer length received by transform stream: %d', chunk.length));
+  // util.log(util.format('Buffer length received by split_chunks transform stream: %d', chunk.length));
+  while (offset < chunk.length) {
+    if (chunk[offset] === 0x0a) {
+      // util.log(util.format('split_chunks offset: %d', offset));
+      // util.log(util.format('Split line is: %s', chunk.slice(offset)));
+      split_chunks.push(chunk.slice(prev_offset, offset));
+      prev_offset = offset;
+    }
+    offset += 1;
+  };
+
+  callback(null);
+};
+
+reshape_chunks._transform = function(chunk, encoding, callback) {
+  // util.log(util.format('Buffer length received by reshape_chunks transform stream: %d', chunk.length));
   var offset = chunk.length;
   while (chunk[offset] !== 0x0a) {
     offset -= 1;
   };
   offset = -(chunk.length - offset);
-  util.log(util.format('Offset: %d', offset));
+  // util.log(util.format('reshape_chunks offset: %d', offset));
 
   if (broken_line) {
     chunk = Buffer.concat([broken_line, chunk]);
   }
 
   broken_line = chunk.slice(offset);
-  util.log(util.format('Broken line is: %s', broken_line));
+  // util.log(util.format('Broken line is: %s', broken_line));
 
   callback(null, chunk);
 };
@@ -141,8 +160,8 @@ function insert_rating(distribution, votes, rank, title) {
   }
 }
 
-function split_rating(string, callback) {
-  var short_string = string.trim(),
+function split_rating(single_chunk, callback) {
+  var short_string = single_chunk.toString().trim(),
     distribution   = short_string.substring(0,10).trim(),
     votes          = short_string.substring(11,19).trim(),
     rank           = short_string.substring(20,24).trim(),
@@ -161,7 +180,8 @@ domain.on('error', function(er) {
 
 domain.add(db);
 domain.add(redis_import);
-domain.add(data_parse);
+domain.add(split_chunks);
+domain.add(reshape_chunks);
 
 domain.run(function() {
   db.select(0, function(err, res){
@@ -174,13 +194,14 @@ domain.run(function() {
       util.log("Data import started");
 
       ratings
-        .pipe(data_parse)
+        .pipe(reshape_chunks)
+        .pipe(split_chunks)
         .pipe(redis_import);
         // .pipe(process.stdout);
 
       ratings.on('end', function() {
-        // db.bgsave();
-        // db.quit();
+        db.bgsave();
+        db.quit();
         util.log("The end");
         process.exit(0);       
       });

@@ -140,14 +140,6 @@ function insert_rating(distribution, votes, rank, title) {
             }
           }
         )
-        .zadd(
-          "distributions", distribution, incr, function(err, resp) {
-            if (err) {
-              process_error(err);
-              process.exit(1);
-            }
-          }
-        )
         .exec(function(err, resp) {
           if (err) {
             process_error(err);

@@ -1,7 +1,7 @@
 var redis      = require("redis"),
   util         = require("util"),
   async        = require("async"),
-  localhost = '127.0.0.1',
+  localhost    = '127.0.0.1',
   redis_config = {local: 
                     {ip: localhost,
                     port: 6379},
@@ -30,8 +30,7 @@ module.exports = function initS (app) {
 
 function getRanksCount(callback){
   var ranks = [],
-    rank = 1.0,
-    err = null;
+    rank = 1.0;
 
   async.whilst(
     function() { 
@@ -39,7 +38,6 @@ function getRanksCount(callback){
     },
     function(next) {
       db.zcount("ranks", rank, rank, function(err, count){
-        // util.log(util.format("year is: %s, count is: %d", year, count));
         ranks.push({r: rank, c: count});
         rank = parseFloat((rank + 0.1).toFixed(1));
         next();
@@ -49,13 +47,11 @@ function getRanksCount(callback){
       callback(err, ranks);
     }
   );
-
 };
 
 function getYearsCount(callback){
   var years = [], 
-    year = 1888, 
-    err = null,
+    year = 1888,
     current_year = new Date().getFullYear();
   
   async.whilst(

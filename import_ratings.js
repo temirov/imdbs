@@ -21,11 +21,11 @@ redis_config.current = redis_config.c9.ip ? redis_config.c9 : redis_config.local
 var db = redis.createClient(redis_config.current.port, redis_config.current.ip);
 
 var stream           = require('stream');
-var redis_import     = new stream.Writable();
+var import_redis     = new stream.Writable();
 var reshape_chunks   = new stream.Transform();
 var split_chunks     = new stream.Transform();
 
-redis_import._write = function (chunk, encoding, callback) {
+import_redis._write = function (chunk, encoding, callback) {
   // console.dir(chunk);
   // util.log('Buffer length received by write stream: ' + chunk.length);
   split_rating(chunk, insert_rating);
@@ -69,14 +69,17 @@ reshape_chunks._transform = function(chunk, encoding, callback) {
   callback(null, chunk);
 };
 
-function process_error(err) {
-  util.log('HORRIBLE ERROR!!!!!!!!!!!!!!!!!!!!!!!!!!');
-  util.log(util.inspect(err));
-}
+function handle_error(err) {
+  if (err) {
+    util.log('HORRIBLE ERROR!!!!!!!!!!!!!!!!!!!!!!!!!!');
+    util.log(util.inspect(err));
+    process.exit(1);
+  }
+};
     
 function isInt(year) {
   return !isNaN(parseInt(year, 10));
-}
+};
 
 function parse_year_from_title(title, callback){
   var year_position = 0,
@@ -90,17 +93,14 @@ function parse_year_from_title(title, callback){
   } while (!(isInt(year) || year_position === 0));
 
   callback(null, year);
-}
+};
 
 function insert_rating(distribution, votes, rank, title) {
   if (typeof title != 'undefined') {
     db.incr("next.ratings.id", function(err, incr){
       parse_year_from_title(title, function(err, year){
-        if (err) {
-          process_error(err);
-          process.exit(1);
-        }
-        // util.log(util.format("Ready to Insert: Full title is: %s;\n Year is %d", title, year));
+        handle_error(err);
+        // util.log(util.format("Ready to insert title: %s;\n year: %d", title, year));
         db.multi()
         .hmset(
           "ratings:" + incr, 
@@ -110,47 +110,27 @@ function insert_rating(distribution, votes, rank, title) {
           "title", title,
           "year", year,
           function(err, resp) {
-            if (err) {
-              process_error(err);
-              process.exit(1);
-            }
+            handle_error(err);
           }
         )
         .zadd(
           "years", year, incr, function(err, resp) {
-            if (err) {
-              process_error(err);
-              process.exit(1);
-            }
+            handle_error(err);
           }
         )
         .zadd(
           "ranks", rank, incr, function(err, resp) {
-            if (err) {
-              process_error(err);
-              process.exit(1);
-            }
-          }
-        )
-        .zadd(
-          "votes", votes, incr, function(err, resp) {
-            if (err) {
-              process_error(err);
-              process.exit(1);
-            }
+            handle_error(err);
           }
         )
         .exec(function(err, resp) {
-          if (err) {
-            process_error(err);
-            process.exit(1);
-          }
+          handle_error(err);
         });
       });
     // util.log(util.format("Ready to Insert: Full title is: %s;\n Year is %d", title, year));
     });
   }
-}
+};
 
 function split_rating(single_chunk, callback) {
   var short_string = single_chunk.toString().trim(),
@@ -159,77 +139,56 @@ function split_rating(single_chunk, callback) {
     rank           = short_string.substring(20,24).trim(),
     title          = short_string.substring(25).trim();
   callback(distribution, votes, rank, title);
-}
+};
 
-db.on("error", function (err) {
-  console.log("Error " + err);
-  process.exit(1); 
+db.on("error", function(err) {
+  handle_error(err);
 });
 
-domain.on('error', function(er) {
-  util.log(util.inspect(er));
+domain.on('error', function(err) {
+  handle_error(err);
 });
 
 domain.add(db);
-domain.add(redis_import);
+domain.add(import_redis);
 domain.add(split_chunks);
 domain.add(reshape_chunks);
 
 domain.run(function() {
   db.select(0, function(err, res){
     if (res == 'OK') {
-      db.flushdb();
-      util.log("The DB has been flushed");
-      db.set("next.ratings.id", 0);
-      util.log("Ratings ID zeroed");
-      var ratings = fs.createReadStream(imdb_source_ratings, {encoding: null});
-      util.log("Data import started");
+      db.flushdb(function(err, res){
+        if (res == 'OK') {
+          util.log("The DB has been flushed");
+          db.set("next.ratings.id", 0, function(err, res){
+            if (res == 'OK') {
+              util.log("Ratings ID zeroed");
+              var ratings = fs.createReadStream(imdb_source_ratings, {encoding: null});
+              util.log("Data import started");
 
-      ratings
-        .pipe(reshape_chunks)
-        .pipe(split_chunks)
-        .pipe(redis_import);
-        // .pipe(process.stdout);
+              ratings
+                .pipe(reshape_chunks)
+                .pipe(split_chunks)
+                .pipe(import_redis);
 
-      ratings.on('end', function() {
-        db.bgsave();
-        db.quit();
-        util.log("The end");
-        process.exit(0);       
+              ratings.on('end', function() {
+                db.bgsave();
+                db.quit();
+                util.log("The end");
+                process.exit(0);       
+              });  
+            } else {
+              handle_error(err);
+            }
+          });
+        }
+        else {
+          handle_error(err);
+        };
       });
-
-      // ratings.on('data', function(data) {
-      //   var lump = data.split("\n");
-
-      //   if (first) {
-      //     lump.splice(0, 296);
-      //     last_chunk = lump.splice(-1,1)[0];
-      //   } else {
-      //     first_chunk = lump.splice(0,1)[0];
-      //     var broken_chunk = last_chunk + first_chunk;
-      //     lump.unshift(broken_chunk);
-      //     last_chunk = lump.splice(-1,1)[0];
-      //   }
-      //   first = false;
-        
-      //   lump.map(function(chunk){
-      //     split_rating(chunk, insert_rating);
-      //   });
-      // });
-
-      // ratings.on('readable', function() {
-      //   util.log("Working");  
-      //   ratings.read();
-      // }); 
-
+      
     } else {
-      util.log("An error occured: %s", res);
-      if (err) {
-        process_error(err);
-        process.exit(1);
-      }
+      handle_error(err);
     }
   });
 });
-
-// input.pipe();

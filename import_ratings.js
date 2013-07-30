@@ -4,10 +4,7 @@ var localhost         = '127.0.0.1',
   util                = require('util'),
   domain              = require('domain').create(),
   imdb_source_ratings = 'data/source/ratings.list',
-  first_chunk, 
-  last_chunk,
-  broken_line, 
-  first = true;
+  broken_line;
 
 var redis_config = {local: 
                       {ip: localhost,
@@ -26,7 +23,6 @@ var reshape_chunks   = new stream.Transform();
 var split_chunks     = new stream.Transform();
 
 import_redis._write = function (chunk, encoding, callback) {
-  // console.dir(chunk);
   // util.log('Buffer length received by write stream: ' + chunk.length);
   split_rating(chunk, insert_rating);
   callback(null);
@@ -186,7 +182,6 @@ domain.run(function() {
           handle_error(err);
         };
       });
-      
     } else {
       handle_error(err);
     }

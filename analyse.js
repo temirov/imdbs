@@ -35,6 +35,8 @@ function ExportRedis(options) {
 ExportRedis.prototype._read = function(size) {
   if (!size) size = 500;
   var self = this;
+  var buf  = new Buffer(size);
+
   db.select(self._db, function(err, res){
     if (res == 'OK') {
       db.get("next.ratings.id", function(err, id){
@@ -47,15 +49,18 @@ ExportRedis.prototype._read = function(size) {
             function(next) {
               db.hget('ratings:' + id, "distribution", function(err, distribution){
                 handle_error(err);
-                if (self._dists.length == size) {
-                  var buf = new Buffer(self._dists, 'utf8');
+
+                // self._dists.push({i: id, d: distribution});
+                // we don't have data yet
+                
+                if size - Buffer.byteLength(self._dists) < Buffer.byteLength({i: id, d: distribution}) {
+                  buf.write(self._dists, 'utf8');
                   self.push(buf);
                   self._dists = [];
                 } else {
                   self._dists.push({i: id, d: distribution});
-                  // we don't have data yet
                   self.push(null);
-                };
+                }
                 
                 id -= 1;
                 next();
@@ -86,7 +91,7 @@ ExportRedis.prototype._read = function(size) {
 function handle_error(err) {
   if (err) {
     util.log('HORRIBLE ERROR!!!!!!!!!!!!!!!!!!!!!!!!!!');
-    util.log(util.inspect(err));
+    util.log(err);
     process.exit(1);
   }
 };

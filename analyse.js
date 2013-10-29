@@ -170,11 +170,11 @@ ImportRedis.prototype._write = function(chunk, encoding, callback) {
       // self.distribution = distribution;
       // util.log(util.format("BEFORE lpush: distribution: %s, id: %d", distribution, self._id));
 
-      this._redis_db.lpush('distributions:' + distribution + ':ids', id, (function(err, l){
+      (self._redis_db.lpush('distributions:' + distribution + ':ids', id, function(err, l){
         console.log(util.inspect(err));
         // handle_error(err);
         console.log(util.inspect(l));
-      })(self));
+      }))(self);
 
       // this._redis_db.lpush('distributions:' + distribution + ':ids', id, (function(err, length){
       //   handle_error(err);

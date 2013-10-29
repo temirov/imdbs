@@ -25,7 +25,6 @@ module.exports = function initS (app) {
       res.json(ranks);
     });
   });
-
 };
 
 function getRanksCount(callback){

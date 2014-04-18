@@ -10,7 +10,7 @@ var app = module.exports = express();
 var localhost = '127.0.0.1';
   
 // all environments
-app.set('port', process.env.PORT || 3000);
+app.set('port', process.env.PORT || 3001);
 app.set('address', process.env.IP || localhost);
 app.set('views', __dirname + '/views');
 app.set('view engine', 'jade');
@@ -21,7 +21,7 @@ app.use(express.methodOverride());
 app.use(express.cookieParser('your secret here'));
 app.use(express.session());
 app.use(app.router);
-app.use(require('less-middleware')({ src: __dirname + '/public' }));
+app.use(require('less-middleware')(path.join(__dirname, 'public')));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // development only

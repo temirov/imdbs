@@ -14,16 +14,17 @@ var redis_config = {local:
 
 redis_config.current = redis_config.c9.ip ? redis_config.c9 : redis_config.local;
 
-var Readable = require('stream').Readable;
-var Writable = require('stream').Writable;
+var stream = require('stream');
+// var Readable = stream.Readable;
+// var Writable = stream.Writable;
 
-util.inherits(ExportRedis, Readable);
-util.inherits(ImportRedis, Writable);
+util.inherits(ExportRedis, stream.Readable);
+util.inherits(ImportRedis, stream.Writable);
 
 function handle_error(err) {
   if (err) {
     util.log('An error occured:\n');
-    util.log(err);
+    util.log(err.stack);
     process.exit(1);
   }
 };
@@ -32,7 +33,7 @@ function ExportRedis(options) {
   if (!(this instanceof ExportRedis))
     return new ExportRedis(options);
 
-  Readable.call(this, options);
+  stream.Readable.call(this, options);
   
   this._db = 0;
   this._dists = '';
@@ -72,10 +73,17 @@ ExportRedis.prototype._read = function(size) {
         return self._ratings_id;
       },
       function(next) {
-        self._redis_db.hget('ratings:' + self._ratings_id, 'distribution', function(err, distribution){
+        // self._redis_db.hget('ratings:' + self._ratings_id, 'distribution', function(err, distribution){
+        self._redis_db.hmget('ratings:' + self._ratings_id, 'distribution', 'year', 'rank', function(err, result){
+          // util.log(util.format("The returned result is: result: %s", util.inspect(result)));
           handle_error(err);
 
-          var data = self._ratings_id + ',' + distribution + ',';
+          var distribution = result[0]; 
+          var year = result[1]; 
+          var rank = result[2]; 
+
+          var data = self._ratings_id + ',' + distribution + ',' + year + ',' + rank + ',';
+          // util.log(util.format("The data is: data: %s", util.inspect(data)));
           var data_length = Buffer.byteLength(data);
           self._buf_length += data_length;
 
@@ -94,7 +102,7 @@ ExportRedis.prototype._read = function(size) {
       },
       function(err) {
         if (!err) {
-          // db.bgsave();
+          self._redis_db.bgsave();
           self._redis_db.quit();
           self.push(null);
           util.log("The end");
@@ -113,7 +121,7 @@ function ImportRedis(options) {
   if (!(this instanceof ImportRedis))
     return new ImportRedis(options);
 
-  Writable.call(this, options);
+  stream.Writable.call(this, options);
   
   this._db = 1;
   this._db_ready = false;
@@ -133,7 +141,7 @@ function ImportRedis(options) {
           util.log(util.format("DB %d has been flushed", self._db));
           self._db_ready = true;
         } else {
-          handle_error;
+          handle_error(err);
         };
       });
     } else {
@@ -143,38 +151,29 @@ function ImportRedis(options) {
 };
 
 ImportRedis.prototype._write = function(chunk, encoding, callback) {
-
-  function addDist(err, length, distribution, id){
-    handle_error(err);
-    util.log(util.format("AFTER lpush: distribution: %s, id: %d", distribution, id));
-    // util.log(util.format("chunk.length: %d", chunk.length));
-
-    self._redis_db.zrem('distributions', distribution, function(err, res){
-      handle_error(err);
-      // util.log(util.format("length: %d", length));
-      self._redis_db.zadd('distributions', length, distribution, function(err, res){
-        handle_error(err);
-      });
-    });
-  };
-
   if (this._db_ready) {
     // util.log(util.format("chunk.length: %d", chunk.length));
-    var split_data = chunk.toString().split(',');
+    // var split_data = chunk.toString().split(',');
+    var split_data = chunk.toString().replace('null','').split(',');
+    // util.log(util.format("split_data: %s \n", split_data));
 
     while (split_data.length) {
       var id = split_data.shift();
       var distribution = split_data.shift();
+      var year = split_data.shift();
+      var rank = split_data.shift();
 
-      var self = this;
+      // util.log(util.format("DATA before write: distribution: %s, id: %d, year: %s, rank: %s", distribution, id, year, rank));
+
+      // var self = this;
       // self.distribution = distribution;
-      // util.log(util.format("BEFORE lpush: distribution: %s, id: %d", distribution, self._id));
+      // util.log(util.format("BEFORE lpush: distribution: %s, id: %d", distribution, id));
 
-      (self._redis_db.lpush('distributions:' + distribution + ':ids', id, function(err, l){
-        console.log(util.inspect(err));
-        // handle_error(err);
-        console.log(util.inspect(l));
-      }))(self);
+      // (self._redis_db.lpush('distributions:' + distribution + ':ids', id, function(err, l){
+      //   console.log(util.inspect(err));
+      //   // handle_error(err);
+      //   console.log(util.inspect(l));
+      // }))(self);
 
       // this._redis_db.lpush('distributions:' + distribution + ':ids', id, (function(err, length){
       //   handle_error(err);
@@ -190,6 +189,42 @@ ImportRedis.prototype._write = function(chunk, encoding, callback) {
       //   //   });
       //   // });
       // })(this)); 
+
+      // this._redis_db.sadd(
+      //   "years:" + year, id, function(err, resp) {
+      //     handle_error(err);
+      //   }
+      // )
+
+      this._redis_db.multi()
+      .zadd(
+        "distributions", distribution, id, function(err, resp) {
+          handle_error(err);
+        }
+      )
+      .sadd(
+        "years:" + year, id, function(err, resp) {
+          handle_error(err);
+        }
+      )
+      .sadd(
+        "ranks:" + rank, id, function(err, resp) {
+          handle_error(err);
+        }
+      )
+      .sadd(
+        "distributions:" + distribution, id, function(err, resp) {
+          handle_error(err);
+        }
+      )
+      .exec(function(err, resp) {
+        handle_error(err);
+      });
+      // .lpush('distributions:' + distribution + ':ids', id, function(err, length){
+      //   handle_error(err);
+      //   // util.log(util.format("AFTER lpush: length: %d", length));
+      //   // util.log(util.format("chunk.length: %d", chunk.length));
+      // }); 
     };
   } else {
     util.log('The DB is NOT ready');
@@ -212,4 +247,11 @@ domain.run(function() {
   redis_read
     // .pipe(process.stdout);
     .pipe(redis_write);
+
+  // redis_read.on('end', function() {
+  //   db.bgsave();
+  //   db.quit();
+  //   util.log("The end");
+  //   process.exit(0);       
+  // });  
 });

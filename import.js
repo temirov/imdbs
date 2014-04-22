@@ -3,8 +3,7 @@ var localhost         = '127.0.0.1',
   fs                  = require('fs'),
   util                = require('util'),
   domain              = require('domain').create(),
-  imdb_source_ratings = 'data/source/ratings.list',
-  broken_line;
+  imdb_source_ratings = 'data/source/ratings.list';
 
 var redis_config = {local: 
                       {ip: localhost,
@@ -29,20 +28,15 @@ function handleError(err) {
   }
 };
 
-function isInt(year) {
-  return !isNaN(parseInt(year, 10));
-};
-
 function parseYearFromTitle(title, callback){
-  var year_position = 0,
-    year = null; 
-
-  do {
-    year_position = title.indexOf('(', year_position) + 1;
-    if (year_position) {
-      year = title.substr(year_position, 4);
-    }
-  } while (!(isInt(year) || year_position === 0));
+  var year = null; 
+  year = title.match(/\((18|19|20)\d{2}(\)|\/)/g);
+  
+  if (year) {
+    year = year[0].substr(1,4)
+  } else {
+    util.log(util.format("Got no year for the film titled: %s", title));
+  }
 
   callback(null, year);
 };
@@ -56,9 +50,7 @@ function ImportRedis(options) {
   
   this._db = 0;
   this._db_ready = false;
-  
   this._redis_db = redis.createClient(redis_config.current.port, redis_config.current.ip);
-
   this._redis_db.on('error', function(err) {
     handleError(err); 
   });
@@ -77,14 +69,12 @@ function ImportRedis(options) {
   });
 };
 
-ImportRedis.prototype.insertRating = function(distribution, votes, rank, title) {
-  if (typeof title != 'undefined') {
+ImportRedis.prototype.insertRating = function(distribution, votes, rank, title, done) {
+  if (typeof title !== 'undefined') {
     var _self = this;
     this._redis_db.incr("next.ratings.id", function(err, incr){
-      parseYearFromTitle(title, function(err, year){
-        handleError(err);
-        _self._redis_db.multi()
-        .hmset(
+      parseYearFromTitle(title, function(err, year){        
+        _self._redis_db.hmset(
           "ratings:" + incr, 
           "distribution", distribution,
           "rank", rank,
@@ -92,40 +82,26 @@ ImportRedis.prototype.insertRating = function(distribution, votes, rank, title) 
           "title", title,
           "year", year,
           function(err, resp) {
-            handleError(err);
+            done(err);
           }
-        )
-        .zadd(
-          "years", year, incr, function(err, resp) {
-            handleError(err);
-          }
-        )
-        .zadd(
-          "ranks", rank, incr, function(err, resp) {
-            handleError(err);
-          }
-        )
-        .exec(function(err, resp) {
-          handleError(err);
-        });
+        );
       });
     });
   }
 };
 
-ImportRedis.prototype.splitRating = function(single_chunk, callback) {
+ImportRedis.prototype.splitRating = function(single_chunk, done, callback) {
   var short_string = single_chunk.toString().trim(),
     distribution   = short_string.substring(0,10).trim(),
     votes          = short_string.substring(11,19).trim(),
     rank           = short_string.substring(20,24).trim(),
     title          = short_string.substring(25).trim();
-  callback(distribution, votes, rank, title);
+  callback(distribution, votes, rank, title, done);
 };
 
 ImportRedis.prototype._write = function(chunk, encoding, callback) {
   if (this._db_ready) {
-    this.splitRating(chunk, this.insertRating.bind(this));
-    callback(null);
+    this.splitRating(chunk, callback, this.insertRating.bind(this));
   } else {
     // util.log(util.format("The DB %s is NOT ready", this._db));
     callback(false);
@@ -138,6 +114,8 @@ function ReshapeChunks(options) {
   }
 
   stream.Transform.call(this, options);
+
+  this._broken_line = null;
 }
 
 ReshapeChunks.prototype._transform = function(chunk, encoding, callback) {
@@ -148,10 +126,10 @@ ReshapeChunks.prototype._transform = function(chunk, encoding, callback) {
   };
   offset = -(chunk.length - offset);
 
-  if (broken_line) {
-    chunk = Buffer.concat([broken_line, chunk]);
+  if (this._broken_line) {
+    chunk = Buffer.concat([this._broken_line, chunk]);
   }
-  broken_line = chunk.slice(offset);
+  this._broken_line = chunk.slice(offset);
 
   callback(null, chunk);
 };
@@ -168,11 +146,12 @@ SplitChunks.prototype._transform = function(chunk, encoding, callback) {
   var offset        = 0, 
     prev_offset     = 0;
 
-  var self = this;
-
   while (offset < chunk.length) {
     if (chunk[offset] === 0x0a) {
-      self.push(chunk.slice(prev_offset, offset));
+      if (chunk.toString().match(/\"American Eats\"/)){
+        util.log(util.format("The offset is: %d", offset));
+      }
+      this.push(chunk.slice(prev_offset, offset));
       prev_offset = offset;
     }
     offset += 1;
@@ -181,30 +160,31 @@ SplitChunks.prototype._transform = function(chunk, encoding, callback) {
   callback(null);
 }; 
 
-var import_redis = new ImportRedis();
-var reshape_chunks = new ReshapeChunks();
-var split_chunks = new SplitChunks();
+var importRedis = new ImportRedis();
+var reshapeChunks = new ReshapeChunks();
+var splitChunks = new SplitChunks();
+var ratings = fs.createReadStream(imdb_source_ratings, {encoding: null});
 
 domain.on('error', function(err) {
   handleError(err);
 });
 
-domain.add(import_redis);
-domain.add(split_chunks);
-domain.add(reshape_chunks);
+domain.add(ratings);
+domain.add(importRedis);
+domain.add(splitChunks);
+domain.add(reshapeChunks);
 
 domain.run(function() {
-  var ratings = fs.createReadStream(imdb_source_ratings, {encoding: null});
   util.log("Data import started");
 
   ratings
-    .pipe(reshape_chunks)
-    .pipe(split_chunks)
-    .pipe(import_redis);
+    .pipe(reshapeChunks)
+    .pipe(splitChunks)
+    .pipe(importRedis);
 
-  ratings.on('end', function() {
-    import_redis._redis_db.bgsave();
-    import_redis._redis_db.quit();
+  ratings.once('end', function() {
+    importRedis._redis_db.bgsave();
+    importRedis._redis_db.quit();
     util.log("The end");
     process.exit(0);       
   });

@@ -25,21 +25,38 @@ module.exports = function initS (app) {
       res.json(ranks);
     });
   });
+
+  app.get('/s/ranks_by_year', function(req, res) {
+    getRanksCountByYear(function(err, ranksByYear){
+      res.json(ranksByYear);
+    });
+  });
+
+  app.get('/s/r_ranks_by_year', function(req, res) {
+    getRoundedRanksByYear(function(err, ranksByYear){
+      res.json(ranksByYear);
+    });
+  });
 };
 
 function getRanksCount(callback){
   var ranks = [],
-    rank = 1.0;
+    rank = 0.9;
 
   async.whilst(
     function() { 
-      return rank <= 10; 
+      return rank < 10; 
     },
     function(next) {
-      db.zcount("ranks", rank, rank, function(err, count){
-        ranks.push({r: rank, c: count});
-        rank = parseFloat((rank + 0.1).toFixed(1));
-        next();
+      db.select(1, function(err, res){
+        if (res == 'OK') {
+          rank = (rank + 0.1).toFixed(1);
+          db.scard("ranks:" + rank, function(err, count){
+            ranks.push({r: rank, c: count});
+            rank = parseFloat(rank);
+            next();
+          });
+        }
       });
     },
     function(err) {
@@ -58,11 +75,15 @@ function getYearsCount(callback){
       return year <= current_year; 
     },
     function(next) {
-      db.zcount("years", year, year, function(err, count){
-        // util.log(util.format("year is: %s, count is: %d", year, count));
-        years.push({y: year, c: count});
-        year += 1;
-        next();
+      db.select(1, function(err, res){
+        if (res == 'OK') {
+          db.scard("years:" + year, function(err, count){
+            // util.log(util.format("year is: %s, count is: %d", year, count));
+            years.push({y: year, c: count});
+            year += 1;
+            next();
+          });
+        }
       });
     },
     function(err) {
@@ -70,3 +91,69 @@ function getYearsCount(callback){
     }
   );
 }
+
+function getRanksCountByYear(callback){
+  var ranksByYear = [],
+    year = 1888,
+    current_year = new Date().getFullYear();
+    rank = 1.0;
+
+  async.whilst(
+    function() { 
+      return year <= current_year;
+    },
+    function(next) {
+      db.select(1, function(err, res){
+        if (res == 'OK') {
+          db.scard("years_ranks:" + year + ":" + rank, function(err, count){
+            if (+count > 0) {
+              ranksByYear.push({year: year, rank: rank, count: count});
+            }
+            if (rank == 10) {
+              rank = 1.0; 
+              year += 1; 
+            }
+            rank = parseFloat((rank + 0.1).toFixed(1));
+            next();
+          });
+        }
+      });
+    },
+    function(err) {
+      callback(err, ranksByYear);
+    }
+  );
+};
+
+function getRoundedRanksByYear(callback){
+  var ranksByYear = [],
+    year = 1888,
+    current_year = new Date().getFullYear();
+    rank = 1;
+
+  async.whilst(
+    function() { 
+      return year <= current_year;
+    },
+    function(next) {
+      db.select(1, function(err, res){
+        if (res == 'OK') {
+          db.sinter("ranks_grouped:" + rank, "years:" + year, function(err, intersection){
+            if (intersection.length > 0) {
+              ranksByYear.push({year: year, rank: rank, count: intersection.length});
+            }
+            if (rank == 10) {
+              rank = 1; 
+              year += 1; 
+            }
+            rank += 1;
+            next();
+          });
+        }
+      });
+    },
+    function(err) {
+      callback(err, ranksByYear);
+    }
+  );
+};

@@ -1,23 +1,17 @@
-function isInt(year) {
-  return !isNaN(parseInt(year, 10));
+function isYear(year) {
+  // return !isNaN(parseInt(year, 10));
+  return (year.match(/(18|19|20)\d{2}/g)[0] && +year>1850 && +year<=(new Date).getFullYear()) 
 }
 
 function parse_year_from_title(title, callback){
-  var year_position = 0,
-    year, 
-    i = 0,
-    err = null;
+  var year = null, 
+  err = null;
 
-  do {
-    year_position = title.indexOf('(', year_position) + 1;
-    if (year_position) {
-      year = title.substr(year_position, 4);
-    }
-    i += 1;
-    console.log("year: %s, year_position: %s, isInt(year): %s, iterator: %s", year, year_position === -1, !isInt(year), i < 10);
-  } while (!(isInt(year) || year_position === -1));
-
-  if (!year) {
+  year = title.match(/\s\((18|19|20)\d{2}\)/g);
+  
+  if (year) {
+    year = year[0].substr(2,5)
+  } else {
     err = new Error("YEAR IS VERY UNDEFINED!!!!!!!");
     err.Title = title;
   } 

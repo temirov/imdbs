@@ -37,8 +37,11 @@ function drawClusteredGraph(){
       clusters.push(element.values.filter(function(e){ return e.count == maxCountPerRate})[0]);
     });
 
-    var allRanks = clusteredNodes.map(function(d){return (+d.key)});
+    var allRanks = clusteredNodes.map(function(d){return (+d.key)}).sort(d3.ascending);
     var color = d3.scale.category10()
+      .domain(allRanks);
+    var l = d3.scale.ordinal()
+      .rangeBands([h, 0], 0.5, .3)
       .domain(allRanks);
 
     // Use the pack layout to initialize node positions.
@@ -130,6 +133,27 @@ function drawClusteredGraph(){
         });
       };
     }
+
+    // Draw legend
+    var legend = svg.append("g")
+      .classed('legend', true)
+      .attr("transform", "translate(" + (w - m[1]) + ", 20)")
+
+    var description = legend.selectAll('.description')
+      .data(allRanks)
+    .enter()
+      .append("g")
+        .classed("description", true)
+        .attr("transform", function(d){ return "translate(0, " + l(d) + ")"; })
+        
+    description.append("circle")
+      .style("fill", function(d){ return color(d); })
+      .attr("r", minRadius * minRadius)
+    
+    description.append("text")
+      .attr("dx", minRadius * minRadius + 5)
+      .attr("dy", ".25em")
+      .text(function(d){ return d; })
   });
 }
 

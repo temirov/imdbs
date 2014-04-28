@@ -6,12 +6,13 @@
     "start": "node app.js"
   },
   "dependencies": {
-    "d3":      "*",
-    "redis":   "*",
+    "d3": "*",
+    "redis": "*",
     "hiredis": "*",
-    "async":   "*",
+    "async": "*",
     "express": "3.x",
-    "jade":   "*",
-    "less-middleware": "*"
+    "jade": "*",
+    "less-middleware": "*",
+    "jsftp": "^1.2.1"
   }
 }

@@ -1,5 +1,6 @@
 var localhost         = '127.0.0.1',
   redis               = require('redis'),
+  d3                  = require('d3'),
   util                = require('util'),
   async               = require('async'),
   domain              = require('domain').create();
@@ -39,6 +40,7 @@ function ExportRedis(options) {
   this._buf_length = 0;
 
   this._redis_db = redis.createClient(redis_config.current.port, redis_config.current.ip);
+  this._redis_db_connections = 100;
 
   this._redis_db.on('error', function(err) {
     handleError(err); 
@@ -49,12 +51,10 @@ function ExportRedis(options) {
   this._redis_db.select(this._db, function(err, res){
     if (res == 'OK') {
       _self._redis_db.get('next.ratings.id', function(err, id){
-        if (res == 'OK') {
-          _self._ratings_id = id;
-          _self.read(0);
-        } else {
-          handleError(err);
-        };
+        handleError(err);
+        // _self._ratings_id = id;
+        _self._ratings_ids = d3.range(+id);
+        _self.read(0);
       });
     } else {
       handleError(err);
@@ -62,53 +62,121 @@ function ExportRedis(options) {
   });
 };
 
+ExportRedis.prototype.flushData = function() {
+  var buf = new Buffer(this._data, 'utf8');
+  this.push(buf);
+  this._data = null;
+  this._buf_length = 0;
+}
+
 ExportRedis.prototype._read = function(size) {
-  if (!size) size = 500;
   var _self = this;
 
-  if (this._ratings_id) {
-    async.whilst(
-      function() { 
-        return _self._ratings_id;
-      },
-      function(next) {
-        _self._redis_db.hmget('ratings:' + _self._ratings_id, 'distribution', 'year', 'rank', 'title', function(err, result){
-          // util.log(util.format("The returned result is: result: %s", util.inspect(result)));
-          handleError(err);
-
-          var data = _self._ratings_id + '|' + result.join('|') + '|';
-          // util.log(util.format("The data is: data: %s", util.inspect(data)));
-          var data_length = Buffer.byteLength(data);
-          _self._buf_length += data_length;
-
-          if (size - _self._buf_length < data_length) {
-            var buf = new Buffer(_self._data, 'utf8');
-            _self.push(buf);
-            _self._data = null;
-            _self._buf_length = 0;
-          } else {
-            _self._data += data;
-          }
-          
-          _self._ratings_id -= 1;
-          next();
-        });
-      },
-      function(err) {
-        if (!err) {
-          _self._redis_db.bgsave();
-          _self._redis_db.quit();
-          _self.push(null);
-          util.log("The end");
-          process.exit(0);
-        } else {
-          handleError(err);
-        }
-      }
-    ); 
-  } else {
+  if (!size) size = 500;
+  if (!this._ratings_ids) { 
     return this.push('');
   }
+
+  // (function loop(){
+  //   if (_self._next_rating && _self._ratings_id > 0){
+  //     _self._next_rating = false;
+  //     _self._redis_db.hmget('ratings:' + _self._ratings_id, 'distribution', 'year', 'rank', 'title', function(err, result){
+  //       handleError(err);
+
+  //       var data = _self._ratings_id + '|' + result.join('|') + '|';
+  //       var data_length = Buffer.byteLength(data);
+  //       _self._buf_length += data_length;
+
+  //       if (size - _self._buf_length < data_length) {
+  //         _self.flushData();
+  //       } else {
+  //         _self._data += data;
+  //       }
+        
+  //       _self._ratings_id -= 1;
+  //       _self._next_rating = true;
+  //       loop();
+  //     });
+  //   }
+  // })()
+
+  // while(_self._next_rating && _self._ratings_id > 0) {
+  //   _self._redis_db.hmget('ratings:' + _self._ratings_id, 'distribution', 'year', 'rank', 'title', function(err, result){
+  //     handleError(err);
+
+  //     var data = _self._ratings_id + '|' + result.join('|') + '|';
+  //     var data_length = Buffer.byteLength(data);
+  //     _self._buf_length += data_length;
+
+  //     if (size - _self._buf_length < data_length) {
+  //       _self.flushData();
+  //     } else {
+  //       _self._data += data;
+  //     }
+      
+  //     _self._ratings_id -= 1;
+  //   });
+  // }
+
+  // util.log(util.format("_ratings_id is %d", _self._ratings_id));
+  // _self.flushData();
+  // _self._redis_db.bgsave();
+  // _self._redis_db.quit();
+  // _self.push(null);
+  // util.log("The end");
+  // process.exit(0);
+  // _self._redis_db.emit('finished_reading');
+
+  // function test(){
+  //   return (_self._next_rating && _self._ratings_id > 0);
+  // }
+
+  function getData(id, next){
+    _self._redis_db.hmget('ratings:' + id, 'distribution', 'year', 'rank', 'title', function(err, result){
+      handleError(err);
+      // util.log(util.format("_ratings_id is %d", id));
+
+      var data = id + '|' + result.join('|') + '|';
+      var data_length = Buffer.byteLength(data);
+      _self._buf_length += data_length;
+
+      if (size - _self._buf_length < data_length) {
+        _self.flushData();
+      } else {
+        _self._data += data;
+      }
+
+      _self._ratings_ids = _self._ratings_ids.filter(function(d){
+        return d !== id;
+      });
+
+      next(null);
+    });
+  }
+
+  function finalStep(err) {
+    handleError(err);
+    util.log("Final Step");
+    // util.log(util.format("_ratings_id is %d", _self._ratings_id));
+    _self.flushData();
+    _self._redis_db.bgsave();
+    _self._redis_db.quit();
+    _self.push(null);
+    util.log("The end");
+    // process.exit(0);
+    _self._redis_db.emit('finished_reading');
+  }
+
+  // util.log(util.format("_ratings_ids is %s", this._ratings_ids));
+
+  // async.eachLimit(this._ratings_ids, this._redis_db_connections, getData, finalStep);
+  async.each(this._ratings_ids, getData, finalStep);
+
+  // async.whilst(
+  //   test, 
+  //   getData, 
+  //   finalStep
+  // ); 
 };
 
 function ImportRedis(options) {
@@ -181,10 +249,13 @@ function CreateStats(options) {
   });
 
   var _self = this;
-  this._redis_db.select(this._db, function(err, res){
-    if (res == 'OK') {
-      _self._redis_db.emit('selected');
-    } 
+
+  this._redis_db.once('finished_reading', function(err){
+    _self._redis_db.select(this._db, function(err, res){
+      if (res == 'OK') {
+        _self._redis_db.emit('selected');
+      } 
+    });
   });
 };
 
@@ -219,18 +290,6 @@ CreateStats.prototype.yearByRanks = function() {
             }
           }
         );
-
-        // years.forEach(function(year){
-        //   ranks.forEach(function(rank){
-        //     _self._redis_db.sinterstore(
-        //       "years_ranks:" + year + ":" + rank, "years:" + year, "ranks:" + rank, function(err, resp) {
-        //         handleError(err);
-        //       }
-        //     );
-        //   });
-        // });
-        // util.log("Ranking by year finished");
-        // _self._redis_db.emit('ranked');
       });
     }); 
   });
@@ -282,20 +341,20 @@ domain.on('error', function(err) {
   handleError(err);
 });
 
-// var redisRead = new ExportRedis();
-// var prepareData = new ImportRedis();
+var redisRead = new ExportRedis();
+var prepareData = new ImportRedis();
 var createStats = new CreateStats();
 
-// domain.add(redisRead);
-// domain.add(prepareData);
+domain.add(redisRead);
+domain.add(prepareData);
 domain.add(createStats);
 
 domain.run(function() {
   util.log("Data analysis started");
 
-  // redisRead
-  //   // .pipe(process.stdout);
-  //   .pipe(prepareData);
+  redisRead
+    // .pipe(process.stdout);
+    .pipe(prepareData);
 
   createStats.yearByRanks();
   createStats.roundRanks();

@@ -11,9 +11,23 @@ var redis_config = {local:
                     c9:
                       {ip: process.env.IP,
                       port: 16349},
+                    ec2:
+                      {ip: process.env.REDIS_HOST,
+                      port: 6379},
                     };
 
-redis_config.current = redis_config.c9.ip ? redis_config.c9 : redis_config.local;
+switch (true) { 
+  case redis_config.c9.ip:
+    redis_config.current = edis_config.c9;
+    break;
+  case redis_config.ec2.ip:
+    redis_config.current = redis_config.ec2;
+    break;
+  default:
+    redis_config.current = redis_config.local;
+}
+
+redis_config.current = redis_config.ec2;
 
 var stream = require('stream');
 util.inherits(ImportRedis, stream.Writable);

@@ -8,9 +8,25 @@ var redis      = require("redis"),
                   c9:
                     {ip: process.env.IP,
                     port: 16349},
+                  ec2:
+                    {ip: process.env.REDIS_HOST,
+                    port: 6379},
                   };
+
+switch (true) { 
+  case redis_config.c9.ip:
+    redis_config.current = edis_config.c9;
+    break;
+  case redis_config.ec2.ip:
+    redis_config.current = redis_config.ec2;
+    break;
+  default:
+    redis_config.current = redis_config.local;
+}
+
+redis_config.current = redis_config.ec2;
                   
-redis_config.current = redis_config.c9.ip ? redis_config.c9 : redis_config.local;
+// redis_config.current = redis_config.c9.ip ? redis_config.c9 : redis_config.local;
 var db = redis.createClient(redis_config.current.port, redis_config.current.ip);
 
 module.exports = function initS (app) {

@@ -52,7 +52,8 @@ function ExportRedis(options) {
     if (res == 'OK') {
       _self._redis_db.get('next.ratings.id', function(err, id){
         handleError(err);
-        // _self._ratings_id = id;
+        _self._ratings_id = id;
+        _self._next_rating = true;
         _self._ratings_ids = d3.range(+id);
         _self.read(0);
       });
@@ -67,6 +68,7 @@ ExportRedis.prototype.flushData = function() {
   this.push(buf);
   this._data = null;
   this._buf_length = 0;
+  util.log('Pushed data');
 }
 
 ExportRedis.prototype._read = function(size) {
@@ -76,6 +78,8 @@ ExportRedis.prototype._read = function(size) {
   if (!this._ratings_ids) { 
     return this.push('');
   }
+
+  // util.log(util.format("_self._next_rating is %s; _self._ratings_id is %s", _self._next_rating, _self._ratings_id));
 
   // (function loop(){
   //   if (_self._next_rating && _self._ratings_id > 0){
@@ -98,10 +102,13 @@ ExportRedis.prototype._read = function(size) {
   //       loop();
   //     });
   //   }
-  // })()
+  // })();
 
-  // while(_self._next_rating && _self._ratings_id > 0) {
+  // while (_self._ratings_id > 0) {
+  //   // util.log(util.format("_self._next_rating is %s; _self._ratings_id is %s", _self._next_rating, _self._ratings_id));
+  //   // _self._next_rating = false;
   //   _self._redis_db.hmget('ratings:' + _self._ratings_id, 'distribution', 'year', 'rank', 'title', function(err, result){
+  //     util.log(util.format("_ratings_id is %d", _self._ratings_id));
   //     handleError(err);
 
   //     var data = _self._ratings_id + '|' + result.join('|') + '|';
@@ -118,7 +125,7 @@ ExportRedis.prototype._read = function(size) {
   //   });
   // }
 
-  // util.log(util.format("_ratings_id is %d", _self._ratings_id));
+  // // util.log(util.format("_ratings_id is %d", _self._ratings_id));
   // _self.flushData();
   // _self._redis_db.bgsave();
   // _self._redis_db.quit();
@@ -134,7 +141,7 @@ ExportRedis.prototype._read = function(size) {
   function getData(id, next){
     _self._redis_db.hmget('ratings:' + id, 'distribution', 'year', 'rank', 'title', function(err, result){
       handleError(err);
-      // util.log(util.format("_ratings_id is %d", id));
+      util.log(util.format("_ratings_id is %d", id));
 
       var data = id + '|' + result.join('|') + '|';
       var data_length = Buffer.byteLength(data);
@@ -167,9 +174,9 @@ ExportRedis.prototype._read = function(size) {
     _self._redis_db.emit('finished_reading');
   }
 
-  // util.log(util.format("_ratings_ids is %s", this._ratings_ids));
+  // // util.log(util.format("_ratings_ids is %s", this._ratings_ids));
 
-  // async.eachLimit(this._ratings_ids, this._redis_db_connections, getData, finalStep);
+  // // async.eachLimit(this._ratings_ids, this._redis_db_connections, getData, finalStep);
   async.each(this._ratings_ids, getData, finalStep);
 
   // async.whilst(
@@ -212,16 +219,19 @@ ImportRedis.prototype._write = function(chunk, encoding, callback) {
 
   if (!this._db_ready) {
     util.log('The DB is NOT ready');
-    return;
+    return callback(false);
   }
 
   var split_data = chunk.toString().replace('null','').split('|');
+
   while (split_data.length) {
     var id = split_data.shift();
     var distribution = split_data.shift();
     var year = split_data.shift();
     var rank = split_data.shift();
     var title = split_data.shift();
+
+    util.log(util.format("_ratings_id is %d", id));
 
     _self._redis_db.multi()
       .sadd("years", year)
@@ -353,10 +363,10 @@ domain.run(function() {
   util.log("Data analysis started");
 
   redisRead
-    // .pipe(process.stdout);
+    .pipe(process.stdout)
     .pipe(prepareData);
 
-  createStats.yearByRanks();
-  createStats.roundRanks();
+  // createStats.yearByRanks();
+  // createStats.roundRanks();
 
 });

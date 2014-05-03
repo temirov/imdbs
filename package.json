@@ -1,18 +1,35 @@
 {
   "name": "imdbs",
-  "private": true,
+  "private": false,
   "version": "0.0.1",
+  "description": "Statistics visualisation for IMDB",
+  "main": "app.js",
   "scripts": {
     "start": "node app.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/temirov/imdbs.git"
+  },
+  "keywords": [
+    "example",
+    "heroku",
+    "streams",
+    "d3.js",
+    "domain",
+    "redis"
+  ],
+  "author": "Vadym Tyemirov",
+  "license": "MIT",
   "dependencies": {
-    "d3": "*",
-    "redis": "*",
-    "hiredis": "*",
     "async": "*",
+    "connect-redis": "1.4.7",
+    "d3": "*",
     "express": "3.x",
+    "hiredis": "*",
     "jade": "*",
+    "jsftp": "^1.2.1",
     "less-middleware": "*",
-    "jsftp": "^1.2.1"
+    "redis": "*"
   }
 }

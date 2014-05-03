@@ -1,8 +1,9 @@
-var localhost         = '127.0.0.1',
-  redis               = require("redis"),
-  fs                  = require('fs'),
-  util                = require('util'),
-  domain              = require('domain').create(),
+var localhost = '127.0.0.1',
+  redis = require("redis"),
+  fs = require('fs'),
+  util = require('util'),
+  stream = require('stream'),
+  domain = require('domain').create(),
   imdb_source_ratings = 'data/source/ratings.list';
 
 var redis_config = {local: 
@@ -27,12 +28,9 @@ switch (true) {
     redis_config.current = redis_config.local;
 }
 
-redis_config.current = redis_config.ec2;
+// redis_config.current = redis_config.ec2;
 
-var stream = require('stream');
-util.inherits(ImportRedis, stream.Writable);
-util.inherits(ReshapeChunks, stream.Transform);
-util.inherits(SplitChunks, stream.Transform);
+util.inherits(FileByLine, stream.Transform);
 
 function handleError(err) {
   if (err) {
@@ -55,87 +53,31 @@ function parseYearFromTitle(title, callback){
   callback(null, year);
 };
 
-function ImportRedis(options) {
-  if (!(this instanceof ImportRedis)) {
-    return new ImportRedis(options);
-  }
-
-  stream.Writable.call(this, options);
-  
-  this._db = 0;
-  this._db_ready = false;
-  this._redis_db = redis.createClient(redis_config.current.port, redis_config.current.ip);
-  this._redis_db.on('error', function(err) {
-    handleError(err); 
-  });
-
-  var _self = this;
-
-  this._redis_db.select(this._db, function(err, res){
-    util.log(util.format("The DB %s has been selected", _self._db));
-    _self._redis_db.flushdb(function(err, res){
-      util.log(util.format("The DB %s has been flushed", _self._db));
-      _self._db_ready = true;
-      _self._redis_db.set("next.ratings.id", 0, function(err, res){
-        util.log("Ratings ID zeroed");
-      });
-    });
-  });
-};
-
-ImportRedis.prototype.insertRating = function(distribution, votes, rank, title, done) {
-  if (typeof title !== 'undefined') {
-    var _self = this;
-    this._redis_db.incr("next.ratings.id", function(err, incr){
-      parseYearFromTitle(title, function(err, year){        
-        _self._redis_db.hmset(
-          "ratings:" + incr, 
-          "distribution", distribution,
-          "rank", rank,
-          "votes", votes,
-          "title", title,
-          "year", year,
-          function(err, resp) {
-            done(err);
-          }
-        );
-      });
-    });
-  }
-};
-
-ImportRedis.prototype.splitRating = function(single_chunk, done, callback) {
-  var short_string = single_chunk.toString().trim(),
-    distribution   = short_string.substring(0,10).trim(),
-    votes          = short_string.substring(11,19).trim(),
-    rank           = short_string.substring(20,24).trim(),
-    title          = short_string.substring(25).trim();
-  callback(distribution, votes, rank, title, done);
-};
-
-ImportRedis.prototype._write = function(chunk, encoding, callback) {
-  if (this._db_ready) {
-    this.splitRating(chunk, callback, this.insertRating.bind(this));
-  } else {
-    // util.log(util.format("The DB %s is NOT ready", this._db));
-    callback(false);
-  };
-};
-
-function ReshapeChunks(options) {
-  if (!(this instanceof ReshapeChunks)) {
-    return new ReshapeChunks(options);
+function FileByLine(options) {
+  if (!(this instanceof FileByLine)) {
+    return new FileByLine(options);
   }
 
   stream.Transform.call(this, options);
 
   this._broken_line = null;
+  this._chunkNumber = 0;
+};
+
+FileByLine.prototype._flush = function(callback) {
+  util.log(util.format("Chunks processed: %d", this._chunkNumber));
+  callback(null);
 }
 
-ReshapeChunks.prototype._transform = function(chunk, encoding, callback) {
-  var offset = chunk.length;
+FileByLine.prototype._transform = function(chunk, encoding, next) {
+  var offset = chunk.length,
+    line_offset = 0, 
+    prev_offset = 0,
+    output = false,
+    delayed_output = false,
+    i = 0;
 
-  while (chunk[offset] !== 0x0a) {
+  while (chunk[offset] !== 0x0a && offset >= 0) {
     offset -= 1;
   };
   offset = -(chunk.length - offset);
@@ -144,61 +86,88 @@ ReshapeChunks.prototype._transform = function(chunk, encoding, callback) {
     chunk = Buffer.concat([this._broken_line, chunk]);
   }
   this._broken_line = chunk.slice(offset);
+  chunk = chunk.slice(0,chunk.length + offset)
 
-  callback(null, chunk);
-};
-
-function SplitChunks(options) {
-  if (!(this instanceof SplitChunks)) {
-    return new SplitChunks(options);
-  }
-
-  stream.Transform.call(this, options);
-}
-
-SplitChunks.prototype._transform = function(chunk, encoding, callback) {
-  var offset        = 0, 
-    prev_offset     = 0;
-
-  while (offset < chunk.length) {
-    if (chunk[offset] === 0x0a) {
-      if (chunk.toString().match(/\"American Eats\"/)){
-        util.log(util.format("The offset is: %d", offset));
-      }
-      this.push(chunk.slice(prev_offset, offset));
-      prev_offset = offset;
+  while (line_offset < chunk.length) {
+    if (chunk[line_offset] === 0x0a) {
+      this.push(chunk.slice(prev_offset, line_offset));
+      prev_offset = line_offset;
     }
-    offset += 1;
+    line_offset += 1;
   };
 
-  callback(null);
-}; 
+  this._chunkNumber += 1;
+  next();
+};
 
-var importRedis = new ImportRedis();
-var reshapeChunks = new ReshapeChunks();
-var splitChunks = new SplitChunks();
-var ratings = fs.createReadStream(imdb_source_ratings, {encoding: null});
+var fileByLine = new FileByLine(),
+  ratings = fs.createReadStream(imdb_source_ratings, {encoding: null});
 
-domain.on('error', function(err) {
-  handleError(err);
-});
+ratings.on('error', handleError);
+fileByLine.on('error', handleError);
+domain.on('error', handleError);
 
+domain.add(util);
 domain.add(ratings);
-domain.add(importRedis);
-domain.add(splitChunks);
-domain.add(reshapeChunks);
+domain.add(fileByLine);
+domain.add(redis);
 
 domain.run(function() {
   util.log("Data import started");
 
-  ratings
-    .pipe(reshapeChunks)
-    .pipe(splitChunks)
-    .pipe(importRedis);
+  var db = 0,
+  redisDb = redis.createClient(redis_config.current.port, redis_config.current.ip);
+
+  redisDb.on('error', handleError);
+
+  redisDb.select(this.db, function(err, res){
+    util.log(util.format("The DB %s has been selected", db));
+    redisDb.flushdb(function(err, res){
+      util.log(util.format("The DB %s has been flushed", db));
+      redisDb.set("next.ratings.id", 0, function(err, res){
+        util.log("Ratings ID zeroed");
+
+        ratings.pipe(fileByLine);
+
+        fileByLine.on('readable', function(){
+          var line = null;
+          while (line = fileByLine.read()) {
+            line = line.toString().trim();
+            // console.log(line);
+            
+            var distribution = line.substring(0,10).trim(),
+            votes = line.substring(11,19).trim(),
+            rank = line.substring(20,24).trim(),
+            title = line.substring(25).trim();
+
+            if (typeof title !== 'undefined') {
+              redisDb.incr("next.ratings.id", function(err, incr){
+                parseYearFromTitle(title, function(err, year){        
+                  redisDb.hmset(
+                    "ratings:" + incr, 
+                    "distribution", distribution,
+                    "rank", rank,
+                    "votes", votes,
+                    "title", title,
+                    "year", year,
+                    function(err, resp) {
+                      handleError(err);
+                    }
+                  );
+                });
+              });
+            } else {
+              util.log(util.format("Got no title for the film: %s", line));
+            }  
+          }
+        });
+      });
+    });
+  });
 
   ratings.once('end', function() {
-    importRedis._redis_db.bgsave();
-    importRedis._redis_db.quit();
+    redisDb.bgsave();
+    redisDb.quit();
     util.log("The end");
     process.exit(0);       
   });

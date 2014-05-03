@@ -23,7 +23,6 @@
   "license": "MIT",
   "dependencies": {
     "async": "*",
-    "connect-redis": "1.4.7",
     "d3": "*",
     "express": "3.x",
     "hiredis": "*",

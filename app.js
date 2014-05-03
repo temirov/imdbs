@@ -2,8 +2,6 @@ var express = require('express')
   , routes = require('./routes')
   , http = require('http')
   , path = require('path')
-  , RedisStore = require('connect-redis')(express)
-  , sessionStore = new RedisStore()
   , util = require('util');
 
 var app = module.exports = express();
@@ -19,13 +17,6 @@ app.use(express.favicon());
 app.use(express.logger('dev'));
 app.use(express.bodyParser());
 app.use(express.methodOverride());
-app.use(express.cookieParser(process.env.NODE_SECRET));
-// app.use(express.session());
-app.use(express.session({
-  secret: "keyboard cat", 
-  store: sessionStore, 
-  key: 'hello.sid'
-}));
 app.use(app.router);
 app.use(require('less-middleware')(path.join(__dirname, 'public')));
 app.use(express.static(path.join(__dirname, 'public')));

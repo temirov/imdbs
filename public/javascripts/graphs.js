@@ -1,11 +1,3 @@
-function enableTooltips(){
-  $("svg [title]").tooltip({
-    html: true,
-    container: 'body',
-    placement: 'top'}
-  )
-}
-
 function drawClusteredGraph(){
   var m = [80, 80, 80, 80],
   w = 960 - m[1] - m[3],
@@ -57,18 +49,38 @@ function drawClusteredGraph(){
       .size([w, h])
       .gravity(.02)
       .charge(0)
-      // .friction(.8)
       .on("tick", tick)
       .start();
 
     var svg = d3.select("#ranks_by_year_chart").append("svg")
-      .attr("width", w)
-      .attr("height", h);
+      .attr("width", w + m[1] + m[3])
+      .attr("height", h + m[0] + m[2]);
+
+    var tooltip = d3.select("body")
+      .append("div")
+      .style("position", "absolute")
+      .style("z-index", "10")
+      .style("visibility", "hidden");
 
     var node = svg.selectAll("circle")
       .data(nodes)
     .enter().append("circle")
       .style("fill", function(d) { return color(d.rank); })
+      .on("mouseover", function(d){ 
+        expandCircle(d.rank);
+        return tooltip
+          .style("visibility", "visible")
+          .text(d.year + " / " + d.count);
+      })
+      .on("mousemove", function(){
+        return tooltip
+          .style("top", (event.pageY-10)+"px")
+          .style("left",(event.pageX+10)+"px");
+      })
+      .on("mouseout", function(d){
+        expandCircle(d.rank);
+        return tooltip.style("visibility", "hidden");
+      })
       .call(force.drag);
 
     node.transition()
@@ -78,6 +90,20 @@ function drawClusteredGraph(){
         var i = d3.interpolate(0, d.radius);
         return function(t) { return d.radius = i(t); };
       });
+
+    function expandCircle(rank) {
+      var rank_radius = d3.select(".rank-" + rank).attr("r");
+      if (rank_radius == minRadius * minRadius * (minRadius/2)) {
+        var timer = null;
+        clearInterval(timer);
+        
+        return timer = setTimeout(function() {
+          return d3.select(".rank-" + rank).attr("r", minRadius * minRadius);
+        }, 1000);
+      } else {
+        d3.select(".rank-" + rank).attr("r", minRadius * minRadius * (minRadius/2));
+      }
+    }
 
     function tick(e) {
       node
@@ -137,23 +163,24 @@ function drawClusteredGraph(){
     // Draw legend
     var legend = svg.append("g")
       .classed('legend', true)
-      .attr("transform", "translate(" + (w - m[1]) + ", 20)")
+      .attr("transform", "translate(" + (w - m[1]) + ", 20)");
 
     var description = legend.selectAll('.description')
       .data(allRanks)
     .enter()
       .append("g")
         .classed("description", true)
-        .attr("transform", function(d){ return "translate(0, " + l(d) + ")"; })
+        .attr("transform", function(d){ return "translate(0, " + l(d) + ")"; });
         
     description.append("circle")
       .style("fill", function(d){ return color(d); })
-      .attr("r", minRadius * minRadius)
+      .attr("class", function(d){ return "rank-" + d; })
+      .attr("r", minRadius * minRadius);
     
     description.append("text")
       .attr("dx", minRadius * minRadius + 5)
       .attr("dy", ".25em")
-      .text(function(d){ return d; })
+      .text(function(d){ return d; });
   });
 }
 

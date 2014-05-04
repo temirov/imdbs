@@ -58,28 +58,28 @@ function drawClusteredGraph(){
 
     var tooltip = d3.select("body")
       .append("div")
-      .style("position", "absolute")
-      .style("z-index", "10")
-      .style("visibility", "hidden");
+      .classed("tooltip", true)
+      .classed("invisible", true);
 
     var node = svg.selectAll("circle")
       .data(nodes)
     .enter().append("circle")
       .style("fill", function(d) { return color(d.rank); })
       .on("mouseover", function(d){ 
-        expandCircle(d.rank);
         return tooltip
-          .style("visibility", "visible")
-          .text(d.year + " / " + d.count);
+          .classed("visible", true)
+          .classed("invisible", false)
+          .text("year: " + d.year + " / movies: " + d.count);
       })
       .on("mousemove", function(){
         return tooltip
-          .style("top", (event.pageY-10)+"px")
-          .style("left",(event.pageX+10)+"px");
+          .style("top", (d3.event.pageY-10) + "px")
+          .style("left", (d3.event.pageX+10) + "px");
       })
-      .on("mouseout", function(d){
-        expandCircle(d.rank);
-        return tooltip.style("visibility", "hidden");
+      .on("mouseout", function(){
+        return tooltip
+          .classed("visible", false)
+          .classed("invisible", true);
       })
       .call(force.drag);
 
@@ -90,20 +90,6 @@ function drawClusteredGraph(){
         var i = d3.interpolate(0, d.radius);
         return function(t) { return d.radius = i(t); };
       });
-
-    function expandCircle(rank) {
-      var rank_radius = d3.select(".rank-" + rank).attr("r");
-      if (rank_radius == minRadius * minRadius * (minRadius/2)) {
-        var timer = null;
-        clearInterval(timer);
-        
-        return timer = setTimeout(function() {
-          return d3.select(".rank-" + rank).attr("r", minRadius * minRadius);
-        }, 1000);
-      } else {
-        d3.select(".rank-" + rank).attr("r", minRadius * minRadius * (minRadius/2));
-      }
-    }
 
     function tick(e) {
       node

@@ -69,7 +69,7 @@ function drawClusteredGraph(){
         return tooltip
           .classed("visible", true)
           .classed("invisible", false)
-          .text("year: " + d.year + " / movies: " + d.count);
+          .text("year: " + d.year + " / movies: " + d.count + " / rank: " + d.rank);
       })
       .on("mousemove", function(){
         return tooltip
@@ -160,7 +160,6 @@ function drawClusteredGraph(){
         
     description.append("circle")
       .style("fill", function(d){ return color(d); })
-      .attr("class", function(d){ return "rank-" + d; })
       .attr("r", minRadius * minRadius);
     
     description.append("text")
@@ -173,8 +172,10 @@ function drawClusteredGraph(){
 function drawFilmsPerYear(){
   var m = [80, 80, 80, 80],
   w = 960 - m[1] - m[3],
-  h = 500 - m[0] - m[2],
-  parse = d3.time.format("%Y").parse;
+  h = 500 - m[0] - m[2];
+
+  var parse = d3.time.format("%Y").parse,
+    numberFormat = d3.format("s");
 
   d3.json('/s/years', function(err, years){
     // Scales and axes. Note the inverted domain for the y-scale: bigger is up!
@@ -220,6 +221,21 @@ function drawFilmsPerYear(){
       .append("g")
         .attr("transform", "translate(" + m[3] + "," + m[0] + ")");
 
+    var tooltip = d3.select("body")
+      .append("div")
+        .classed("tooltip", true)
+        .classed("invisible", true);
+
+    var bisectYear = d3.bisector(function(d) { return d.y; }).left;
+
+    function tooltipText(e){
+      var xValue = x.invert(d3.mouse(e)[0]);
+      var index = bisectYear(years, xValue);
+      var year = years[index].y.getFullYear();
+      var movies = years[index].c;
+      return "year: " + year + " / movies: " + numberFormat(movies);
+    }
+
     // Add the clip path.
     svg.append("clipPath")
         .attr("id", "clip")
@@ -231,7 +247,24 @@ function drawFilmsPerYear(){
     svg.append("path")
       .attr("class", "area")
       .attr("clip-path", "url(#clip)")
-      .attr("d", area(years));
+      .attr("d", area(years))
+      .on("mouseover", function(){ 
+        return tooltip
+          .classed("visible", true)
+          .classed("invisible", false)
+          .text(tooltipText(this));
+      })
+      .on("mousemove", function(){
+        return tooltip
+          .style("top", (d3.event.pageY-10) + "px")
+          .style("left", (d3.event.pageX+10) + "px")
+          .text(tooltipText(this));
+      })
+      .on("mouseout", function(){
+        return tooltip
+          .classed("visible", false)
+          .classed("invisible", true);
+      });
 
     // Add the x-axis.
     svg.append("g")
@@ -249,8 +282,8 @@ function drawFilmsPerYear(){
     yearsLine = svg.append("path")
       .attr("class", "line")
       .attr("clip-path", "url(#clip)")
-      .attr("d", line(years));
-    yearsLine.on
+      .attr("d", line(years))
+      ;
 
     svg.append("text")
       .attr("x", w - 6)
@@ -264,6 +297,8 @@ function drawRanksDistribution(){
   var m = [80, 80, 80, 80],
   w = 960 - m[1] - m[3],
   h = 500 - m[0] - m[2];
+
+  var numberFormat = d3.format("s");
 
   d3.json('/s/ranks', function(err, ranks){
     var x = d3.scale.linear()
@@ -306,10 +341,42 @@ function drawRanksDistribution(){
     x.domain(d3.extent(ranks, function(r) { return r.r; }));
     y.domain([0, d3.max(ranks, function(r) { return r.c; })]);
 
+    var bisectYear = d3.bisector(function(d) { return d.r; }).right;
+
+    var tooltip = d3.select("body")
+      .append("div")
+        .classed("tooltip", true)
+        .classed("invisible", true);
+    
+    function tooltipText(e){
+      var xValue = x.invert(d3.mouse(e)[0]);
+      var index = bisectYear(ranks, xValue);
+      var rank = ranks[index].r;
+      var movies = ranks[index].c;
+      return "rank: " + rank + " / movies: " + numberFormat(movies);
+    }
+
     svg.append("path")
       .datum(ranks)
       .attr("class", "area")
-      .attr("d", area);
+      .attr("d", area)
+      .on("mouseover", function(){ 
+        return tooltip
+          .classed("visible", true)
+          .classed("invisible", false)
+          .text(tooltipText(this));
+      })
+      .on("mousemove", function(){
+        return tooltip
+          .style("top", (d3.event.pageY-10) + "px")
+          .style("left", (d3.event.pageX+10) + "px")
+          .text(tooltipText(this));
+      })
+      .on("mouseout", function(){
+        return tooltip
+          .classed("visible", false)
+          .classed("invisible", true);
+      });
 
     svg.append("g")
       .attr("class", "x axis")
@@ -342,4 +409,3 @@ function drawRanksDistribution(){
 drawFilmsPerYear();
 drawRanksDistribution();
 drawClusteredGraph();
-// enableTooltips();

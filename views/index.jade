@@ -5,11 +5,30 @@ block append head
   script(src="/javascripts/graphs.js", charset="utf-8")
   script(src="/javascripts/ga.js", charset="utf-8")
   
-block content
-  h1= title
-  p Welcome to #{title}
+block header
+  header
+    h1= title
+    p Welcome to #{title}
 
-  #ranks_by_year_chart
-  #movies_a_year_chart
-  #ranks_distribution_chart
+    nav
+      ul
+        li
+          a(href='#ranks_by_year_chart') Bubble graph
+        li
+          a(href='#movies_a_year_chart') Interpolated graph
+        li
+          a(href='#ranks_distribution_chart') Linear graph
+
+block content
+  main
+    p.explanation This visualization shows ranks distribution of movies over years. Each bubble rerpresents a rank that has been given by the users at a certain year. Ranks are clustered around a bubble that represent the year when the biggest number of the movies got this rank.
+    #ranks_by_year_chart.center
+    p.explanation The size of the cluster would tell which ranks have been given more often. We can see it's 8 and 7. The sizes of the bubbles vary depending on the number of the movies that were given a particular rank this year.
+    
+    p.explanation This simple visualization shows the number of the movies that got ranked every year. 
+    #movies_a_year_chart.center
+    p.explanation We can see that movies production quadrupled over the past 20 years. Yet, it's only about 20000 movies that get produced yearly.  
+    
+    p.explanation This simple visualization shows the ranks distribution over the number of movies. 
+    #ranks_distribution_chart.center
   

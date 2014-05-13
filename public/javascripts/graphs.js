@@ -149,7 +149,7 @@ function drawClusteredGraph(){
     // Draw legend
     var legend = svg.append("g")
       .classed('legend', true)
-      .attr("transform", "translate(" + (w - m[1]) + ", 20)");
+      .attr("transform", "translate(20, 20)");
 
     var description = legend.selectAll('.description')
       .data(allRanks)
